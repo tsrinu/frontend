@@ -1,0 +1,21 @@
+[
+  "tests/test_auth_required.py::test_earnings_requires_auth",
+  "tests/test_auth_required.py::test_gift_subs_requires_auth",
+  "tests/test_auth_required.py::test_subscribe_requires_auth",
+  "tests/test_auth_required.py::test_super_chat_requires_auth",
+  "tests/test_auth_required.py::test_tier_list_remains_public",
+  "tests/test_billing.py::test_4_tiers",
+  "tests/test_billing.py::test_earnings_invalid_range",
+  "tests/test_billing.py::test_gift_sub_valid",
+  "tests/test_billing.py::test_gift_sub_wrong_count",
+  "tests/test_billing.py::test_healthz",
+  "tests/test_billing.py::test_metrics",
+  "tests/test_billing.py::test_regional_inr",
+  "tests/test_billing.py::test_subscribe_unknown_tier",
+  "tests/test_billing.py::test_subscribe_valid",
+  "tests/test_billing.py::test_super_chat_colors",
+  "tests/test_billing.py::test_super_chat_rejects_zero",
+  "tests/test_security.py::test_oversize_body_rejected",
+  "tests/test_security.py::test_request_id_propagates_when_provided",
+  "tests/test_security.py::test_security_headers_present"
+]

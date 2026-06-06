@@ -1,0 +1,27 @@
+# Build / cache
+__pycache__/
+*.pyc
+node_modules/
+.next/
+out/
+build/
+pytest-cache*
+
+# Secrets / env
+.env
+.env.local
+.env.production
+*.pem
+keys/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3

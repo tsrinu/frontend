@@ -1,0 +1,9 @@
+fastapi==0.122.0
+uvicorn[standard]==0.32.1
+pydantic==2.10.3
+PyJWT[crypto]==2.13.0
+httpx==0.28.1
+
+# Observability
+sentry-sdk==2.19.2
+prometheus-fastapi-instrumentator==7.0.2

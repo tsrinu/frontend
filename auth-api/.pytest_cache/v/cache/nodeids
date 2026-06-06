@@ -1,0 +1,22 @@
+[
+  "tests/test_auth.py::test_2fa_flow",
+  "tests/test_auth.py::test_attempt_limit",
+  "tests/test_auth.py::test_bogus_token",
+  "tests/test_auth.py::test_email_otp_flow",
+  "tests/test_auth.py::test_email_wrong_code",
+  "tests/test_auth.py::test_healthz",
+  "tests/test_auth.py::test_introspect",
+  "tests/test_auth.py::test_jwks",
+  "tests/test_auth.py::test_metrics",
+  "tests/test_auth.py::test_passkey_login_no_creds",
+  "tests/test_auth.py::test_passkey_register_challenge",
+  "tests/test_auth.py::test_passkey_register_requires_auth",
+  "tests/test_auth.py::test_rate_limit",
+  "tests/test_auth.py::test_rejects_malformed_email",
+  "tests/test_auth.py::test_security_health",
+  "tests/test_auth.py::test_sso_dev_fallback_when_no_keys",
+  "tests/test_auth.py::test_sso_unknown_provider",
+  "tests/test_security.py::test_no_devCode_in_response",
+  "tests/test_security.py::test_request_id_round_trip",
+  "tests/test_security.py::test_security_headers_present"
+]

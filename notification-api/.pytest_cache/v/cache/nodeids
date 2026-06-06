@@ -1,0 +1,12 @@
+[
+  "tests/test_auth_required.py::test_get_preferences_requires_auth",
+  "tests/test_auth_required.py::test_inbox_requires_auth",
+  "tests/test_auth_required.py::test_set_preferences_requires_auth",
+  "tests/test_notification.py::test_healthz",
+  "tests/test_notification.py::test_inbox_has_items",
+  "tests/test_notification.py::test_metrics",
+  "tests/test_notification.py::test_preferences_get_put",
+  "tests/test_security.py::test_oversize_body_rejected",
+  "tests/test_security.py::test_request_id_propagates_when_provided",
+  "tests/test_security.py::test_security_headers_present"
+]

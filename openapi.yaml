@@ -1,0 +1,2118 @@
+openapi: 3.0.3
+info:
+  title: distrebute.com Platform API
+  version: 0.1.0
+  description: |
+    Unified API surface for distrebute.com — the 22 UI templates wired to
+    backend services. Every endpoint is owned by exactly one microservice
+    (see `x-owner` extension). Gateway routes path prefixes to services.
+
+    Auth model: short-lived JWT access tokens (15 min) + opaque refresh
+    tokens via the auth-service. Passkey / WebAuthn primary, password fallback.
+  contact:
+    name: distrebute.com platform team
+    email: api@distrebute.com
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local docker-compose gateway
+  - url: https://api.distrebute.com/v1
+    description: Production
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: auth
+    description: Sign-in, passkeys, 2FA, sessions (auth-service)
+  - name: users
+    description: Profiles, preferences, kids mode, devices (user-service)
+  - name: metadata
+    description: Titles, episodes, channels, creators (metadata-service)
+  - name: video
+    description: Playback URLs, transcoding, DRM (video-service)
+  - name: recommendations
+    description: Feed, rows, taste graph, explainability (recommendation-service)
+  - name: search
+    description: Hybrid people + content search (nlp-service)
+  - name: translation
+    description: Subtitles + auto-dub (translation-service)
+  - name: ai
+    description: Voice nav, summaries, smart digests (ai-service)
+  - name: gamification
+    description: Streaks, badges, XP, Wrapped (gamification-service)
+  - name: moderation
+    description: Reports, spam detection, sensitive blur (spam-service)
+  - name: billing
+    description: Memberships, tips, super chats, payouts (billing-service)
+  - name: live
+    description: Live streams, chat, polls, predictions (live-service)
+  - name: social
+    description: Comments, follows, watch parties (social-service)
+  - name: notifications
+    description: Push, email, digests, inbox (notification-service)
+  - name: analytics
+    description: Events, watch time, creator dashboard (analytics-service)
+
+# =============================================================================
+#  PATHS — grouped by service tag
+# =============================================================================
+paths:
+
+  # ---- AUTH ----------------------------------------------------------------
+  /auth/passkey/challenge:
+    post:
+      tags: [auth]
+      summary: Start a passkey sign-in challenge (WebAuthn)
+      x-owner: auth-service
+      x-templates: [18]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PasskeyChallengeRequest' }
+      responses:
+        '200':
+          description: WebAuthn challenge
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PasskeyChallenge' }
+
+  /auth/passkey/verify:
+    post:
+      tags: [auth]
+      summary: Verify passkey assertion and issue tokens
+      x-owner: auth-service
+      x-templates: [18]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PasskeyAssertion' }
+      responses:
+        '200':
+          description: Auth tokens
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+
+  /auth/sso/{provider}:
+    post:
+      tags: [auth]
+      summary: SSO sign-in (apple, google, facebook)
+      x-owner: auth-service
+      x-templates: [18]
+      security: []
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema: { type: string, enum: [apple, google, facebook] }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                idToken: { type: string }
+                authCode: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+
+  /auth/email/start:
+    post:
+      tags: [auth]
+      summary: Send magic link / OTP to email
+      x-owner: auth-service
+      x-templates: [18]
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '202': { description: Code sent }
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: Exchange refresh token for a new access token
+      x-owner: auth-service
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+
+  /auth/2fa/setup:
+    post:
+      tags: [auth]
+      summary: Begin TOTP enrollment, returns QR + secret
+      x-owner: auth-service
+      x-templates: [18]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  qrPngBase64: { type: string }
+                  secret: { type: string }
+                  recoveryCodes:
+                    type: array
+                    items: { type: string }
+
+  /auth/2fa/verify:
+    post:
+      tags: [auth]
+      summary: Verify TOTP code, enable 2FA
+      x-owner: auth-service
+      x-templates: [18]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code: { type: string, example: "847291" }
+      responses:
+        '200': { description: 2FA enabled }
+
+  /auth/security/health:
+    get:
+      tags: [auth]
+      summary: Account security score + checklist
+      x-owner: auth-service
+      x-templates: [18]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SecurityHealth' }
+
+  /auth/events:
+    get:
+      tags: [auth]
+      summary: Recent sign-in events (success, blocked, suspicious)
+      x-owner: auth-service
+      x-templates: [18, 20]
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20, maximum: 100 }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SecurityEvent' }
+
+  # ---- USERS, PROFILES, DEVICES, KIDS --------------------------------------
+
+  /users/me:
+    get:
+      tags: [users]
+      summary: Current user profile
+      x-owner: user-service
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+
+  /users/me/profiles:
+    get:
+      tags: [users]
+      summary: List family profiles (adult + kid)
+      x-owner: user-service
+      x-templates: [21]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Profile' }
+    post:
+      tags: [users]
+      summary: Create a new profile
+      x-owner: user-service
+      x-templates: [21]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProfileCreate' }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Profile' }
+
+  /users/me/profiles/{profileId}/parental:
+    put:
+      tags: [users]
+      summary: Update parental controls (age cap, screen time, schedule, categories)
+      x-owner: user-service
+      x-templates: [21]
+      parameters:
+        - in: path
+          name: profileId
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ParentalControls' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ParentalControls' }
+
+  /users/me/pin:
+    post:
+      tags: [users]
+      summary: Set household PIN to exit kid mode
+      x-owner: user-service
+      x-templates: [21]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pin: { type: string, minLength: 4, maxLength: 6 }
+      responses:
+        '204': { description: PIN set }
+
+  /users/me/privacy:
+    get:
+      tags: [users]
+      summary: Privacy toggle states (history, personalization, etc.)
+      x-owner: user-service
+      x-templates: [19]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PrivacySettings' }
+    put:
+      tags: [users]
+      summary: Update privacy toggles
+      x-owner: user-service
+      x-templates: [19]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PrivacySettings' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PrivacySettings' }
+
+  /users/me/data-export:
+    post:
+      tags: [users]
+      summary: Request full data export (GDPR/CCPA/DPDPA)
+      x-owner: user-service
+      x-templates: [19]
+      responses:
+        '202':
+          description: Export queued; emailed when ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobId: { type: string }
+                  estimatedReadyAt: { type: string, format: date-time }
+
+  /users/me/account:
+    delete:
+      tags: [users]
+      summary: Delete account permanently (30-day grace)
+      x-owner: user-service
+      x-templates: [19]
+      responses:
+        '202': { description: Account scheduled for deletion }
+
+  /users/me/devices:
+    get:
+      tags: [users]
+      summary: All active sessions/devices
+      x-owner: user-service
+      x-templates: [20]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Device' }
+
+  /users/me/devices/{deviceId}:
+    delete:
+      tags: [users]
+      summary: Sign out a specific device
+      x-owner: user-service
+      x-templates: [20]
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Signed out }
+
+  /users/me/devices/all:
+    delete:
+      tags: [users]
+      summary: Sign out of all devices except current
+      x-owner: user-service
+      x-templates: [20]
+      responses:
+        '204': { description: All other devices signed out }
+
+  /users/me/devices/{deviceId}/not-me:
+    post:
+      tags: [users]
+      summary: Mark a sign-in attempt as fraudulent, trigger recovery flow
+      x-owner: user-service
+      x-templates: [20]
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema: { type: string }
+      responses:
+        '202': { description: Recovery flow initiated }
+
+  # ---- METADATA: titles, episodes, channels --------------------------------
+
+  /titles:
+    get:
+      tags: [metadata]
+      summary: Browse titles (filter by genre, region, language)
+      x-owner: metadata-service
+      x-templates: [1, 3, 7, 16]
+      parameters:
+        - { in: query, name: genre, schema: { type: string } }
+        - { in: query, name: region, schema: { type: string } }
+        - { in: query, name: language, schema: { type: string } }
+        - { in: query, name: page, schema: { type: integer, default: 1 } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items: { $ref: '#/components/schemas/Title' }
+                  page: { type: integer }
+                  total: { type: integer }
+
+  /titles/{titleId}:
+    get:
+      tags: [metadata]
+      summary: Title detail page (hero, synopsis, ratings, episodes)
+      x-owner: metadata-service
+      x-templates: [3]
+      parameters:
+        - in: path
+          name: titleId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TitleDetail' }
+
+  /titles/{titleId}/episodes:
+    get:
+      tags: [metadata]
+      summary: Episode list for a series
+      x-owner: metadata-service
+      x-templates: [3]
+      parameters:
+        - in: path
+          name: titleId
+          required: true
+          schema: { type: string }
+        - { in: query, name: season, schema: { type: integer } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Episode' }
+
+  /channels/{channelId}:
+    get:
+      tags: [metadata]
+      summary: Creator channel page (banner, featured, videos, about)
+      x-owner: metadata-service
+      x-templates: [4]
+      parameters:
+        - in: path
+          name: channelId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Channel' }
+
+  /channels/{channelId}/videos:
+    get:
+      tags: [metadata]
+      summary: Paginated videos for a channel
+      x-owner: metadata-service
+      x-templates: [4]
+      parameters:
+        - in: path
+          name: channelId
+          required: true
+          schema: { type: string }
+        - { in: query, name: sort, schema: { type: string, enum: [recent, popular, oldest] } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/VideoCard' }
+
+  /videos/{videoId}:
+    get:
+      tags: [metadata]
+      summary: Video detail (title, byline, chapters, description)
+      x-owner: metadata-service
+      x-templates: [2]
+      parameters:
+        - in: path
+          name: videoId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Video' }
+
+  # ---- VIDEO PLAYBACK ------------------------------------------------------
+
+  /playback/{videoId}/manifest:
+    get:
+      tags: [video]
+      summary: Get HLS/DASH manifest URL with signed DRM token
+      x-owner: video-service
+      x-templates: [2, 17]
+      parameters:
+        - in: path
+          name: videoId
+          required: true
+          schema: { type: string }
+        - { in: query, name: deviceType, schema: { type: string, enum: [phone, tablet, tv, web] } }
+        - { in: query, name: drm, schema: { type: string, enum: [widevine, fairplay, playready] } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlaybackManifest' }
+
+  /playback/{videoId}/heartbeat:
+    post:
+      tags: [video]
+      summary: Report playback position (every 15s) for resume + analytics
+      x-owner: video-service
+      x-templates: [2, 17]
+      parameters:
+        - in: path
+          name: videoId
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                positionSec: { type: number }
+                deviceId: { type: string }
+                quality: { type: string }
+                bufferEvents: { type: integer }
+      responses:
+        '204': { description: ack }
+
+  /playback/handoff:
+    post:
+      tags: [video]
+      summary: Move active playback session to a different device
+      x-owner: video-service
+      x-templates: [17]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fromDeviceId: { type: string }
+                toDeviceId: { type: string }
+                videoId: { type: string }
+                positionSec: { type: number }
+      responses:
+        '200': { description: handoff complete }
+
+  /playback/resume:
+    get:
+      tags: [video]
+      summary: List of titles with resume position (Continue Watching row)
+      x-owner: video-service
+      x-templates: [1, 8]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ResumeItem' }
+
+  # ---- RECOMMENDATIONS -----------------------------------------------------
+
+  /feed/home:
+    get:
+      tags: [recommendations]
+      summary: Personalized home rows for current user
+      x-owner: recommendation-service
+      x-templates: [1, 8]
+      parameters:
+        - { in: query, name: deviceType, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/FeedRow' }
+
+  /feed/shorts:
+    get:
+      tags: [recommendations]
+      summary: Vertical shorts feed (For You / Subscribed / Live)
+      x-owner: recommendation-service
+      x-templates: [5]
+      parameters:
+        - { in: query, name: tab, schema: { type: string, enum: [for-you, subscribed, live] } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Short' }
+
+  /feed/up-next/{videoId}:
+    get:
+      tags: [recommendations]
+      summary: Up Next sidebar for a watching video
+      x-owner: recommendation-service
+      x-templates: [2]
+      parameters:
+        - in: path
+          name: videoId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/VideoCard' }
+
+  /feed/why:
+    get:
+      tags: [recommendations]
+      summary: Explainability for a recommendation (why am I seeing this)
+      x-owner: recommendation-service
+      x-templates: [15]
+      parameters:
+        - { in: query, name: videoId, required: true, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WhyRecommendation' }
+
+  /feed/feedback:
+    post:
+      tags: [recommendations]
+      summary: Not-interested / show-less-like-this signal
+      x-owner: recommendation-service
+      x-templates: [15]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                videoId: { type: string }
+                action: { type: string, enum: [not_interested, mute_creator, more_like_this] }
+      responses:
+        '204': { description: signal recorded }
+
+  /feed/preferences:
+    get:
+      tags: [recommendations]
+      summary: Genre dial settings + discovery slider
+      x-owner: recommendation-service
+      x-templates: [15]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeedPreferences' }
+    put:
+      tags: [recommendations]
+      summary: Update genre dial / discovery slider
+      x-owner: recommendation-service
+      x-templates: [15]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeedPreferences' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeedPreferences' }
+
+  /taste-map:
+    get:
+      tags: [recommendations]
+      summary: User's taste graph (genres, creators, moods, drift)
+      x-owner: recommendation-service
+      x-templates: [14]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TasteMap' }
+
+  /feed/regional/{region}:
+    get:
+      tags: [recommendations]
+      summary: Trending-in-region row (e.g. India, US)
+      x-owner: recommendation-service
+      x-templates: [16]
+      parameters:
+        - in: path
+          name: region
+          required: true
+          schema: { type: string, example: "IN" }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/VideoCard' }
+
+  /feed/cultural-calendar:
+    get:
+      tags: [recommendations]
+      summary: Upcoming cultural events with themed collections
+      x-owner: recommendation-service
+      x-templates: [16]
+      parameters:
+        - { in: query, name: region, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CulturalEvent' }
+
+  # ---- SEARCH --------------------------------------------------------------
+
+  /search:
+    get:
+      tags: [search]
+      summary: Mixed search across creators, titles, videos, live streams
+      x-owner: nlp-service
+      x-templates: [7]
+      parameters:
+        - { in: query, name: q, required: true, schema: { type: string } }
+        - { in: query, name: type, schema: { type: string, enum: [all, creators, titles, videos, live, shorts] } }
+        - { in: query, name: language, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SearchResults' }
+
+  /search/suggest:
+    get:
+      tags: [search]
+      summary: Autocomplete suggestions
+      x-owner: nlp-service
+      x-templates: [7]
+      parameters:
+        - { in: query, name: q, required: true, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
+
+  # ---- TRANSLATION / AUTO-DUB ---------------------------------------------
+
+  /translation/languages:
+    get:
+      tags: [translation]
+      summary: List supported languages for UI / CC / dub
+      x-owner: translation-service
+      x-templates: [16]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    code: { type: string, example: "te" }
+                    name: { type: string, example: "తెలుగు" }
+                    supportsDub: { type: boolean }
+                    supportsCC: { type: boolean }
+
+  /translation/{videoId}/captions:
+    get:
+      tags: [translation]
+      summary: WebVTT captions for a video
+      x-owner: translation-service
+      x-templates: [2, 16]
+      parameters:
+        - in: path
+          name: videoId
+          required: true
+          schema: { type: string }
+        - { in: query, name: language, required: true, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            text/vtt:
+              schema: { type: string }
+
+  /translation/{videoId}/dub:
+    post:
+      tags: [translation]
+      summary: Request an auto-dub job for a target language
+      x-owner: translation-service
+      x-templates: [16]
+      parameters:
+        - in: path
+          name: videoId
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                targetLanguage: { type: string }
+                preserveVoice: { type: boolean }
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobId: { type: string }
+
+  # ---- AI: voice nav, summaries, smart digests -----------------------------
+
+  /ai/voice-command:
+    post:
+      tags: [ai]
+      summary: Parse a voice command from TV remote ("play next episode")
+      x-owner: ai-service
+      x-templates: [17]
+      requestBody:
+        content:
+          audio/wav:
+            schema: { type: string, format: binary }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  intent: { type: string }
+                  entities: { type: object }
+                  action: { type: object }
+
+  /ai/recap/{titleId}/{episodeId}:
+    get:
+      tags: [ai]
+      summary: AI-generated recap of previous episodes
+      x-owner: ai-service
+      x-templates: [3]
+      parameters:
+        - { in: path, name: titleId, required: true, schema: { type: string } }
+        - { in: path, name: episodeId, required: true, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  spokenAudioUrl: { type: string }
+                  textSummary: { type: string }
+                  durationSec: { type: integer }
+
+  /ai/notifications/digest:
+    get:
+      tags: [ai]
+      summary: Today's smart-personalized notification digest
+      x-owner: ai-service
+      x-templates: [15]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationDigest' }
+
+  # ---- GAMIFICATION --------------------------------------------------------
+
+  /gamification/me:
+    get:
+      tags: [gamification]
+      summary: Current streak, XP, level, badges (Loyalty Hub)
+      x-owner: gamification-service
+      x-templates: [13]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GamificationProfile' }
+
+  /gamification/wrapped/{year}:
+    get:
+      tags: [gamification]
+      summary: Annual Year-in-Review (Wrapped)
+      x-owner: gamification-service
+      x-templates: [13]
+      parameters:
+        - in: path
+          name: year
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WrappedReport' }
+
+  /gamification/streak/check-in:
+    post:
+      tags: [gamification]
+      summary: Trigger daily check-in (extends streak)
+      x-owner: gamification-service
+      x-templates: [13]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  streak: { type: integer }
+                  xpEarned: { type: integer }
+                  badgeUnlocked: { type: string, nullable: true }
+
+  # ---- MODERATION / SAFETY -------------------------------------------------
+
+  /moderation/report:
+    post:
+      tags: [moderation]
+      summary: Submit a report on a video, comment, or creator
+      x-owner: spam-service
+      x-templates: [22]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReportRequest' }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reportId: { type: string }
+                  estimatedReviewBy: { type: string, format: date-time }
+
+  /moderation/flags/{videoId}:
+    get:
+      tags: [moderation]
+      summary: Sensitive-content flags for a video (blur, age gate, warnings)
+      x-owner: spam-service
+      x-templates: [22]
+      parameters:
+        - in: path
+          name: videoId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContentFlags' }
+
+  /moderation/age-confirm:
+    post:
+      tags: [moderation]
+      summary: User confirms age gate, unlock 18+ playback
+      x-owner: spam-service
+      x-templates: [22]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                titleId: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  unlockedFor: { type: integer, description: "seconds" }
+
+  # ---- BILLING / MONETIZATION ----------------------------------------------
+
+  /billing/memberships/tiers/{channelId}:
+    get:
+      tags: [billing]
+      summary: Membership tiers for a creator
+      x-owner: billing-service
+      x-templates: [10]
+      parameters:
+        - in: path
+          name: channelId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/MembershipTier' }
+
+  /billing/memberships/subscribe:
+    post:
+      tags: [billing]
+      summary: Subscribe to a creator membership tier
+      x-owner: billing-service
+      x-templates: [10]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tierId, paymentMethodId]
+              properties:
+                tierId: { type: string }
+                paymentMethodId: { type: string }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Subscription' }
+
+  /billing/super-chat:
+    post:
+      tags: [billing]
+      summary: Send a super chat / tip during a live stream
+      x-owner: billing-service
+      x-templates: [11]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                streamId: { type: string }
+                amount: { type: number }
+                currency: { type: string }
+                message: { type: string, maxLength: 200 }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuperChat' }
+
+  /billing/gift-subs:
+    post:
+      tags: [billing]
+      summary: Gift N memberships to random viewers in a stream
+      x-owner: billing-service
+      x-templates: [11]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                streamId: { type: string }
+                count: { type: integer, enum: [5, 25, 50, 100] }
+                tierId: { type: string }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  giftedTo:
+                    type: array
+                    items: { type: string }
+
+  /billing/creator/earnings:
+    get:
+      tags: [billing]
+      summary: Creator's earnings dashboard (Studio template)
+      x-owner: billing-service
+      x-templates: [9]
+      parameters:
+        - { in: query, name: range, schema: { type: string, enum: [30d, 90d, ytd, all] } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatorEarnings' }
+
+  /billing/pricing/regional:
+    get:
+      tags: [billing]
+      summary: Regional pricing for current user's country
+      x-owner: billing-service
+      x-templates: [10, 16]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  currency: { type: string }
+                  region: { type: string }
+                  tiers:
+                    type: array
+                    items: { $ref: '#/components/schemas/MembershipTier' }
+
+  # ---- LIVE STREAMING ------------------------------------------------------
+
+  /live/streams/{streamId}:
+    get:
+      tags: [live]
+      summary: Live stream metadata (viewer count, tags, status)
+      x-owner: live-service
+      x-templates: [6, 11]
+      parameters:
+        - in: path
+          name: streamId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LiveStream' }
+
+  /live/streams/{streamId}/chat:
+    get:
+      tags: [live]
+      summary: Connect to live chat (returns WebSocket URL)
+      x-owner: live-service
+      x-templates: [6]
+      parameters:
+        - in: path
+          name: streamId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  wsUrl: { type: string, example: "ws://localhost:8113/live/abc123/chat" }
+                  token: { type: string }
+
+  /live/streams/{streamId}/poll:
+    post:
+      tags: [live]
+      summary: Streamer creates a live poll
+      x-owner: live-service
+      x-templates: [11]
+      parameters:
+        - in: path
+          name: streamId
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                question: { type: string }
+                options:
+                  type: array
+                  items: { type: string }
+                durationSec: { type: integer, default: 90 }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Poll' }
+
+  /live/streams/{streamId}/poll/{pollId}/vote:
+    post:
+      tags: [live]
+      summary: Viewer votes in a live poll
+      x-owner: live-service
+      x-templates: [11]
+      parameters:
+        - { in: path, name: streamId, required: true, schema: { type: string } }
+        - { in: path, name: pollId, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                optionIndex: { type: integer }
+      responses:
+        '204': { description: vote recorded }
+
+  /live/streams/{streamId}/prediction:
+    post:
+      tags: [live]
+      summary: Streamer creates a prediction (channel-points stake)
+      x-owner: live-service
+      x-templates: [11]
+      parameters:
+        - in: path
+          name: streamId
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                question: { type: string }
+                outcomes:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      label: { type: string }
+                      color: { type: string }
+                durationSec: { type: integer, default: 120 }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Prediction' }
+
+  # ---- SOCIAL: comments, follows, watch party ------------------------------
+
+  /social/follow/{channelId}:
+    post:
+      tags: [social]
+      summary: Subscribe to a creator
+      x-owner: social-service
+      x-templates: [4]
+      parameters:
+        - in: path
+          name: channelId
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: subscribed }
+    delete:
+      tags: [social]
+      summary: Unsubscribe from a creator
+      x-owner: social-service
+      x-templates: [4]
+      parameters:
+        - in: path
+          name: channelId
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: unsubscribed }
+
+  /social/comments/{videoId}:
+    get:
+      tags: [social]
+      summary: List comments on a video
+      x-owner: social-service
+      x-templates: [2]
+      parameters:
+        - in: path
+          name: videoId
+          required: true
+          schema: { type: string }
+        - { in: query, name: sort, schema: { type: string, enum: [top, new] } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Comment' }
+    post:
+      tags: [social]
+      summary: Post a comment
+      x-owner: social-service
+      x-templates: [2]
+      parameters:
+        - in: path
+          name: videoId
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                body: { type: string }
+                parentId: { type: string, nullable: true }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Comment' }
+
+  /social/watch-party:
+    post:
+      tags: [social]
+      summary: Create a new watch party room
+      x-owner: social-service
+      x-templates: [12]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                videoId: { type: string }
+                inviteOnly: { type: boolean }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WatchParty' }
+
+  /social/watch-party/{roomId}/join:
+    post:
+      tags: [social]
+      summary: Join a watch party via invite link
+      x-owner: social-service
+      x-templates: [12]
+      parameters:
+        - in: path
+          name: roomId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  wsUrl: { type: string }
+                  participants:
+                    type: array
+                    items: { $ref: '#/components/schemas/Participant' }
+
+  /social/watch-party/{roomId}/react:
+    post:
+      tags: [social]
+      summary: Send a floating emoji reaction to the room
+      x-owner: social-service
+      x-templates: [12]
+      parameters:
+        - in: path
+          name: roomId
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                emoji: { type: string }
+      responses:
+        '204': { description: broadcast }
+
+  # ---- NOTIFICATIONS -------------------------------------------------------
+
+  /notifications/inbox:
+    get:
+      tags: [notifications]
+      summary: In-app inbox
+      x-owner: notification-service
+      x-templates: [8]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/InboxItem' }
+
+  /notifications/preferences:
+    get:
+      tags: [notifications]
+      summary: Notification preferences (channels + frequency)
+      x-owner: notification-service
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationPreferences' }
+    put:
+      tags: [notifications]
+      summary: Update notification preferences
+      x-owner: notification-service
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotificationPreferences' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationPreferences' }
+
+# =============================================================================
+#  COMPONENTS
+# =============================================================================
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, example: "VIDEO_NOT_FOUND" }
+        message: { type: string }
+        requestId: { type: string }
+
+    TokenPair:
+      type: object
+      properties:
+        accessToken: { type: string, description: "JWT, 15-min TTL" }
+        refreshToken: { type: string, description: "opaque, 30-day TTL" }
+        expiresIn: { type: integer, example: 900 }
+
+    PasskeyChallengeRequest:
+      type: object
+      properties:
+        email: { type: string, format: email }
+
+    PasskeyChallenge:
+      type: object
+      properties:
+        challenge: { type: string }
+        rpId: { type: string }
+        allowCredentials:
+          type: array
+          items: { type: object }
+        timeout: { type: integer }
+
+    PasskeyAssertion:
+      type: object
+      properties:
+        id: { type: string }
+        rawId: { type: string }
+        response:
+          type: object
+          properties:
+            authenticatorData: { type: string }
+            clientDataJSON: { type: string }
+            signature: { type: string }
+
+    SecurityHealth:
+      type: object
+      properties:
+        score: { type: integer, minimum: 0, maximum: 100 }
+        grade: { type: string, enum: [weak, moderate, strong, perfect] }
+        checks:
+          type: array
+          items:
+            type: object
+            properties:
+              key: { type: string, example: "passkey_set" }
+              label: { type: string }
+              status: { type: string, enum: [done, todo, warn] }
+              actionUrl: { type: string }
+
+    SecurityEvent:
+      type: object
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [signin, signout, password_change, blocked_attempt, device_added] }
+        device: { type: string }
+        location: { type: string }
+        ipMasked: { type: string }
+        at: { type: string, format: date-time }
+        flagged: { type: boolean }
+
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        displayName: { type: string }
+        avatarUrl: { type: string }
+        country: { type: string }
+        language: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    Profile:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        avatarUrl: { type: string }
+        age: { type: integer, nullable: true }
+        isKidProfile: { type: boolean }
+        ageRatingCap: { type: string, enum: [U, U/A 7+, U/A 13+, U/A 16+, A] }
+
+    ProfileCreate:
+      type: object
+      required: [name, isKidProfile]
+      properties:
+        name: { type: string }
+        avatarUrl: { type: string }
+        age: { type: integer }
+        isKidProfile: { type: boolean }
+        ageRatingCap: { type: string }
+
+    ParentalControls:
+      type: object
+      properties:
+        ageRatingCap: { type: string }
+        dailyScreenTimeMinutes: { type: integer }
+        weeklySchedule:
+          type: array
+          description: 7 entries (Mon→Sun), each with allowed time ranges
+          items:
+            type: object
+            properties:
+              day: { type: integer, minimum: 0, maximum: 6 }
+              allowedRanges:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    startMinute: { type: integer }
+                    endMinute: { type: integer }
+        allowedCategories:
+          type: array
+          items: { type: string }
+        blockedCategories:
+          type: array
+          items: { type: string }
+        pinRequiredToExit: { type: boolean }
+
+    PrivacySettings:
+      type: object
+      properties:
+        watchHistory: { type: boolean }
+        personalization: { type: boolean }
+        voiceSearchHistory: { type: boolean }
+        adPersonalization: { type: boolean }
+        locationForLive: { type: boolean }
+        crashDiagnostics: { type: boolean }
+
+    Device:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string, example: "iPhone 15 Pro · Safari" }
+        type: { type: string, enum: [phone, tablet, tv, web, desktop, console] }
+        location: { type: string, example: "Mumbai, IN" }
+        ipMasked: { type: string }
+        lastActiveAt: { type: string, format: date-time }
+        isCurrent: { type: boolean }
+        isFlagged: { type: boolean }
+
+    Title:
+      type: object
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [movie, series, special] }
+        title: { type: string }
+        synopsis: { type: string }
+        posterUrl: { type: string }
+        heroUrl: { type: string }
+        rating: { type: string }
+        year: { type: integer }
+        genres:
+          type: array
+          items: { type: string }
+        languages:
+          type: array
+          items: { type: string }
+        regions:
+          type: array
+          items: { type: string }
+
+    TitleDetail:
+      allOf:
+        - $ref: '#/components/schemas/Title'
+        - type: object
+          properties:
+            seasons:
+              type: array
+              items:
+                type: object
+                properties:
+                  number: { type: integer }
+                  episodeCount: { type: integer }
+            cast:
+              type: array
+              items:
+                type: object
+                properties:
+                  name: { type: string }
+                  role: { type: string }
+            relatedTitleIds:
+              type: array
+              items: { type: string }
+
+    Episode:
+      type: object
+      properties:
+        id: { type: string }
+        seasonNumber: { type: integer }
+        episodeNumber: { type: integer }
+        title: { type: string }
+        synopsis: { type: string }
+        thumbnailUrl: { type: string }
+        durationSec: { type: integer }
+
+    Channel:
+      type: object
+      properties:
+        id: { type: string }
+        handle: { type: string, example: "@mirakavi" }
+        displayName: { type: string }
+        bannerUrl: { type: string }
+        avatarUrl: { type: string }
+        subscribers: { type: integer }
+        videoCount: { type: integer }
+        verified: { type: boolean }
+        joinedAt: { type: string, format: date-time }
+        about: { type: string }
+        featuredVideoId: { type: string }
+
+    Video:
+      type: object
+      properties:
+        id: { type: string }
+        channelId: { type: string }
+        title: { type: string }
+        description: { type: string }
+        durationSec: { type: integer }
+        views: { type: integer }
+        likes: { type: integer }
+        publishedAt: { type: string, format: date-time }
+        chapters:
+          type: array
+          items: { $ref: '#/components/schemas/Chapter' }
+        thumbnailUrl: { type: string }
+
+    VideoCard:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        thumbnailUrl: { type: string }
+        durationSec: { type: integer }
+        channelName: { type: string }
+        views: { type: integer }
+        publishedAt: { type: string, format: date-time }
+
+    Chapter:
+      type: object
+      properties:
+        startSec: { type: integer }
+        endSec: { type: integer }
+        title: { type: string }
+        thumbnailUrl: { type: string }
+
+    PlaybackManifest:
+      type: object
+      properties:
+        manifestUrl: { type: string, example: "https://cdn.distrebute.com/hls/abc/manifest.m3u8" }
+        format: { type: string, enum: [hls, dash] }
+        drmToken: { type: string }
+        drmType: { type: string, enum: [widevine, fairplay, playready, none] }
+        resumePositionSec: { type: integer }
+        captions:
+          type: array
+          items:
+            type: object
+            properties:
+              language: { type: string }
+              url: { type: string }
+        availableQualities:
+          type: array
+          items: { type: string, example: "1080p" }
+
+    ResumeItem:
+      type: object
+      properties:
+        videoId: { type: string }
+        title: { type: string }
+        thumbnailUrl: { type: string }
+        positionSec: { type: integer }
+        durationSec: { type: integer }
+        lastWatchedAt: { type: string, format: date-time }
+
+    FeedRow:
+      type: object
+      properties:
+        rowId: { type: string }
+        title: { type: string, example: "Because you watched The Last Signal" }
+        rowType: { type: string, enum: [continue_watching, top10, regional, creators, live, recommendation, sub_genre] }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/VideoCard' }
+
+    Short:
+      type: object
+      properties:
+        id: { type: string }
+        videoUrl: { type: string }
+        thumbnailUrl: { type: string }
+        creator:
+          type: object
+          properties:
+            handle: { type: string }
+            displayName: { type: string }
+            avatarUrl: { type: string }
+        caption: { type: string }
+        soundCredit: { type: string }
+        likes: { type: integer }
+        comments: { type: integer }
+        shares: { type: integer }
+
+    WhyRecommendation:
+      type: object
+      properties:
+        reasons:
+          type: array
+          items:
+            type: object
+            properties:
+              code: { type: string }
+              text: { type: string, example: "You watched 5 Mira Kavi videos this month" }
+
+    FeedPreferences:
+      type: object
+      properties:
+        genreWeights:
+          type: object
+          additionalProperties: { type: number, minimum: 0, maximum: 1 }
+        discoveryDial: { type: number, minimum: 0, maximum: 1, description: "0=comfort, 1=surprise me" }
+        boostedCreators:
+          type: array
+          items: { type: string }
+        mutedCreators:
+          type: array
+          items: { type: string }
+
+    TasteMap:
+      type: object
+      properties:
+        topGenres:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              affinity: { type: number }
+              percentOfWatchTime: { type: number }
+        moods:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              affinity: { type: number }
+        insights:
+          type: array
+          items:
+            type: object
+            properties:
+              title: { type: string }
+              body: { type: string }
+        driftingAwayFrom:
+          type: array
+          items: { type: string }
+
+    CulturalEvent:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string, example: "Diwali" }
+        date: { type: string, format: date }
+        region: { type: string }
+        collectionIds:
+          type: array
+          items: { type: string }
+
+    SearchResults:
+      type: object
+      properties:
+        creators:
+          type: array
+          items:
+            type: object
+            properties:
+              channel: { $ref: '#/components/schemas/Channel' }
+        videos:
+          type: array
+          items: { $ref: '#/components/schemas/VideoCard' }
+        titles:
+          type: array
+          items: { $ref: '#/components/schemas/Title' }
+        live:
+          type: array
+          items: { $ref: '#/components/schemas/LiveStream' }
+
+    NotificationDigest:
+      type: object
+      properties:
+        headline: { type: string }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              icon: { type: string }
+              text: { type: string }
+              linkUrl: { type: string }
+
+    GamificationProfile:
+      type: object
+      properties:
+        streakDays: { type: integer }
+        longestStreakDays: { type: integer }
+        xp: { type: integer }
+        level: { type: integer }
+        xpToNextLevel: { type: integer }
+        badges:
+          type: array
+          items: { $ref: '#/components/schemas/Badge' }
+
+    Badge:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        iconUrl: { type: string }
+        earned: { type: boolean }
+        earnedAt: { type: string, format: date-time, nullable: true }
+
+    WrappedReport:
+      type: object
+      properties:
+        year: { type: integer }
+        totalHoursWatched: { type: number }
+        topGenre: { type: string }
+        topCreators:
+          type: array
+          items:
+            type: object
+            properties:
+              channelId: { type: string }
+              displayName: { type: string }
+              hoursWatched: { type: number }
+        streakDays: { type: integer }
+        badgesEarned:
+          type: array
+          items: { $ref: '#/components/schemas/Badge' }
+        shareableImageUrl: { type: string }
+
+    ReportRequest:
+      type: object
+      required: [targetType, targetId, reasonCode]
+      properties:
+        targetType: { type: string, enum: [video, comment, creator, live_stream] }
+        targetId: { type: string }
+        reasonCode:
+          type: string
+          enum: [spam, spoilers, hate, sexual, copyright, other]
+        details: { type: string, maxLength: 500 }
+
+    ContentFlags:
+      type: object
+      properties:
+        sensitiveBlur: { type: boolean }
+        ageGate: { type: string, nullable: true, example: "A" }
+        warnings:
+          type: array
+          items: { type: string, example: "violence" }
+
+    MembershipTier:
+      type: object
+      properties:
+        id: { type: string }
+        channelId: { type: string }
+        name: { type: string, example: "Supporter" }
+        priceAmount: { type: number }
+        priceCurrency: { type: string }
+        billingInterval: { type: string, enum: [month, year] }
+        perks:
+          type: array
+          items: { type: string }
+        popular: { type: boolean }
+
+    Subscription:
+      type: object
+      properties:
+        id: { type: string }
+        tierId: { type: string }
+        status: { type: string, enum: [active, past_due, canceled] }
+        startedAt: { type: string, format: date-time }
+        renewsAt: { type: string, format: date-time }
+
+    SuperChat:
+      type: object
+      properties:
+        id: { type: string }
+        streamId: { type: string }
+        amount: { type: number }
+        currency: { type: string }
+        message: { type: string }
+        color: { type: string, enum: [blue, pink, gold] }
+        pinnedSeconds: { type: integer }
+        from:
+          type: object
+          properties:
+            handle: { type: string }
+            avatarUrl: { type: string }
+
+    CreatorEarnings:
+      type: object
+      properties:
+        rangeLabel: { type: string }
+        totals:
+          type: object
+          properties:
+            total: { type: number }
+            ads: { type: number }
+            tips: { type: number }
+            members: { type: number }
+            merch: { type: number }
+        monthlyTrend:
+          type: array
+          items:
+            type: object
+            properties:
+              month: { type: string }
+              total: { type: number }
+        topVideos:
+          type: array
+          items:
+            type: object
+            properties:
+              videoId: { type: string }
+              title: { type: string }
+              views: { type: integer }
+              earnings: { type: number }
+
+    LiveStream:
+      type: object
+      properties:
+        id: { type: string }
+        channelId: { type: string }
+        title: { type: string }
+        thumbnailUrl: { type: string }
+        viewerCount: { type: integer }
+        tags:
+          type: array
+          items: { type: string }
+        status: { type: string, enum: [scheduled, live, ended] }
+        startedAt: { type: string, format: date-time }
+
+    Poll:
+      type: object
+      properties:
+        id: { type: string }
+        question: { type: string }
+        options:
+          type: array
+          items:
+            type: object
+            properties:
+              text: { type: string }
+              votes: { type: integer }
+              percent: { type: number }
+        endsAt: { type: string, format: date-time }
+
+    Prediction:
+      type: object
+      properties:
+        id: { type: string }
+        question: { type: string }
+        outcomes:
+          type: array
+          items:
+            type: object
+            properties:
+              label: { type: string }
+              color: { type: string }
+              channelPointsStaked: { type: integer }
+              odds: { type: number }
+        endsAt: { type: string, format: date-time }
+        status: { type: string, enum: [open, locked, resolved, refunded] }
+
+    Comment:
+      type: object
+      properties:
+        id: { type: string }
+        videoId: { type: string }
+        parentId: { type: string, nullable: true }
+        body: { type: string }
+        author:
+          type: object
+          properties:
+            handle: { type: string }
+            displayName: { type: string }
+            avatarUrl: { type: string }
+            verified: { type: boolean }
+        likes: { type: integer }
+        createdAt: { type: string, format: date-time }
+        pinned: { type: boolean }
+        creatorHearted: { type: boolean }
+
+    WatchParty:
+      type: object
+      properties:
+        roomId: { type: string }
+        videoId: { type: string }
+        hostUserId: { type: string }
+        inviteUrl: { type: string }
+        participants:
+          type: array
+          items: { $ref: '#/components/schemas/Participant' }
+        positionSec: { type: integer }
+        playing: { type: boolean }
+
+    Participant:
+      type: object
+      properties:
+        userId: { type: string }
+        displayName: { type: string }
+        avatarUrl: { type: string }
+        muted: { type: boolean }
+        speaking: { type: boolean }
+        joinedAt: { type: string, format: date-time }
+
+    InboxItem:
+      type: object
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [new_episode, creator_live, watch_party_invite, security_alert, payout, digest] }
+        title: { type: string }
+        body: { type: string }
+        thumbnailUrl: { type: string }
+        linkUrl: { type: string }
+        unread: { type: boolean }
+        createdAt: { type: string, format: date-time }
+
+    NotificationPreferences:
+      type: object
+      properties:
+        push:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            quietHours:
+              type: object
+              properties:
+                start: { type: string, example: "22:00" }
+                end: { type: string, example: "08:00" }
+        email:
+          type: object
+          properties:
+            weeklyDigest: { type: boolean }
+            creatorActivity: { type: boolean }
+            securityAlerts: { type: boolean }
+        smartDigest:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            dailyAt: { type: string, example: "08:30" }

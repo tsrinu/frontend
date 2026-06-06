@@ -1,0 +1,15 @@
+[
+  "tests/test_auth_required.py::test_create_watch_party_requires_auth",
+  "tests/test_auth_required.py::test_follow_requires_auth",
+  "tests/test_auth_required.py::test_post_comment_requires_auth",
+  "tests/test_auth_required.py::test_read_comments_remains_public",
+  "tests/test_auth_required.py::test_unfollow_requires_auth",
+  "tests/test_security.py::test_oversize_body_rejected",
+  "tests/test_security.py::test_request_id_propagates_when_provided",
+  "tests/test_security.py::test_security_headers_present",
+  "tests/test_social.py::test_comments_fixture",
+  "tests/test_social.py::test_follow_unfollow",
+  "tests/test_social.py::test_healthz",
+  "tests/test_social.py::test_metrics",
+  "tests/test_social.py::test_watch_party_create"
+]

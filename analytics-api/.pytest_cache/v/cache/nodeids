@@ -1,0 +1,14 @@
+[
+  "tests/test_analytics.py::test_event_ingest",
+  "tests/test_analytics.py::test_healthz",
+  "tests/test_analytics.py::test_metrics",
+  "tests/test_analytics.py::test_oversize_name_rejected",
+  "tests/test_analytics.py::test_recent_limit_clamped",
+  "tests/test_analytics.py::test_recent_returns_list",
+  "tests/test_analytics.py::test_watch_time_today",
+  "tests/test_auth_required.py::test_ingest_requires_auth",
+  "tests/test_auth_required.py::test_read_recent_remains_public",
+  "tests/test_security.py::test_oversize_body_rejected",
+  "tests/test_security.py::test_request_id_propagates_when_provided",
+  "tests/test_security.py::test_security_headers_present"
+]

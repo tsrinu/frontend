@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>distrebute — live API cockpit</title>
+<style>
+  :root {
+    --bg: #0a0a0c; --bg-2: #131318; --bg-3: #1c1c24; --border: #25252e;
+    --text: #fff; --text-2: #b3b3bd; --text-3: #6e6e7a;
+    --brand: #ff2d55; --brand-2: #7c3aed; --brand-grad: linear-gradient(135deg, #ff2d55 0%, #7c3aed 100%);
+    --ok: #34c759; --warn: #f59e0b; --err: #ff453a; --info: #06b6d4;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #050507; color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", sans-serif;
+    -webkit-font-smoothing: antialiased; padding: 24px 16px 60px; line-height: 1.4; }
+  .container { max-width: 1280px; margin: 0 auto; }
+
+  /* Header */
+  header.top { display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 0 24px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+  .brand { display: flex; align-items: center; gap: 12px; font-weight: 800; font-size: 20px; }
+  .logo-mark { width: 36px; height: 36px; background: var(--brand-grad);
+    border-radius: 9px; display: grid; place-items: center; font-weight: 800; font-size: 18px; }
+
+  /* Status pills (one per API) */
+  .api-status { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pill { display: flex; align-items: center; gap: 6px; padding: 5px 11px;
+    background: var(--bg-3); border: 1px solid var(--border); border-radius: 999px;
+    font-size: 12px; color: var(--text-2); cursor: default; }
+  .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); }
+  .pill.ok .dot { background: var(--ok); }
+  .pill.fail .dot { background: var(--err); }
+
+  /* Sign-in panel */
+  .signin { background: var(--bg-2); border: 1px solid var(--border); border-radius: 14px;
+    padding: 18px 22px; margin-bottom: 24px; display: flex; gap: 16px; align-items: center;
+    flex-wrap: wrap; }
+  .signin h3 { font-size: 14px; font-weight: 700; }
+  .signin input { background: var(--bg-3); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; color: var(--text); font-size: 13px; min-width: 220px; }
+  .signin button { padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 700;
+    border: none; cursor: pointer; background: var(--brand); color: #fff; }
+  .signin button.outline { background: var(--bg-3); color: var(--text); border: 1px solid var(--border); }
+  .signin .status { font-size: 12px; color: var(--text-3); margin-left: auto; }
+  .signin .status.ok { color: var(--ok); }
+
+  /* Grid of flow cards */
+  .flows { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 14px; }
+  .card { background: var(--bg-2); border: 1px solid var(--border); border-radius: 14px;
+    padding: 20px; transition: border-color 0.2s; }
+  .card:hover { border-color: rgba(255,45,85,0.4); }
+  .card-head { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px; }
+  .card-num { background: var(--bg-3); border: 1px solid var(--border); border-radius: 6px;
+    padding: 2px 8px; font-size: 10.5px; font-weight: 700; color: var(--text-3); }
+  .card-title { font-size: 15px; font-weight: 700; flex: 1; }
+  .card-desc { font-size: 12.5px; color: var(--text-2); margin-bottom: 12px; line-height: 1.5; }
+  .card-meta { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .tag { background: var(--bg-3); border: 1px solid var(--border); padding: 2px 8px;
+    border-radius: 999px; font-size: 10.5px; color: var(--text-3); }
+  .tag.auth { color: var(--brand); border-color: rgba(255,45,85,0.4); }
+  .card-actions { display: flex; gap: 8px; }
+  .card-actions button { flex: 1; padding: 8px 14px; background: var(--bg-3);
+    border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 12.5px;
+    font-weight: 600; cursor: pointer; }
+  .card-actions button.primary { background: var(--brand-grad); border-color: transparent; }
+  .card-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Output panel (modal) */
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+    display: none; align-items: center; justify-content: center; padding: 24px; z-index: 100; }
+  .modal.show { display: flex; }
+  .modal-inner { background: var(--bg-2); border: 1px solid var(--border); border-radius: 14px;
+    max-width: 900px; width: 100%; max-height: 90vh; overflow: hidden;
+    display: flex; flex-direction: column; }
+  .modal-head { padding: 18px 22px; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center; }
+  .modal-head h3 { font-size: 16px; font-weight: 700; }
+  .modal-close { background: none; border: 1px solid var(--border); color: var(--text);
+    padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .modal-body { padding: 18px 22px; overflow-y: auto; flex: 1; }
+  .step { background: var(--bg-3); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px; margin-bottom: 10px; }
+  .step-head { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+  .step-method { background: var(--brand); color: #fff; padding: 1px 8px; border-radius: 4px;
+    font-size: 10.5px; font-weight: 700; }
+  .step-method.GET { background: var(--info); }
+  .step-method.POST { background: var(--brand); }
+  .step-method.PUT { background: var(--warn); }
+  .step-method.DELETE { background: var(--err); }
+  .step-path { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px;
+    color: var(--text-2); }
+  .step-status { margin-left: auto; padding: 1px 8px; border-radius: 4px; font-size: 10.5px;
+    font-weight: 700; }
+  .step-status.ok { background: rgba(52,199,89,0.18); color: var(--ok); }
+  .step-status.err { background: rgba(255,69,58,0.18); color: var(--err); }
+  pre { background: #050507; border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px 12px; font-size: 11.5px; color: var(--text-2); overflow-x: auto;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; line-height: 1.5; }
+
+  /* Settings panel */
+  .settings { background: var(--bg-3); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 16px; margin-bottom: 18px; font-size: 12px; color: var(--text-3); }
+  .settings code { color: var(--text-2); }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header class="top">
+    <div class="brand">
+      <div class="logo-mark">d</div>
+      <span>distrebute — live API cockpit</span>
+    </div>
+    <div class="api-status" id="apiStatus">
+      <span class="pill" data-api="auth"><span class="dot"></span>auth:8001</span>
+      <span class="pill" data-api="user"><span class="dot"></span>user:8002</span>
+      <span class="pill" data-api="billing"><span class="dot"></span>billing:8012</span>
+      <span class="pill" data-api="live"><span class="dot"></span>live:8013</span>
+      <span class="pill" data-api="social"><span class="dot"></span>social:8014</span>
+      <span class="pill" data-api="notification"><span class="dot"></span>notify:8015</span>
+      <span class="pill" data-api="analytics"><span class="dot"></span>analytics:8016</span>
+    </div>
+  </header>
+
+  <div class="settings">
+    Open <code>distrebute-ui-templates.html</code> in another tab to see the static design that each
+    flow below brings to life. Boot all APIs with <code>run-all-apis.bat</code> (port 8001–8016).
+    All requests use real JWTs once you've signed in below.
+  </div>
+
+  <div class="signin">
+    <h3>1. Sign in (Email OTP)</h3>
+    <input type="email" id="email" placeholder="you@example.com" value="tsrinu00@gmail.com" />
+    <button onclick="signinStart()">Send code</button>
+    <input type="text" id="otp" placeholder="OTP code" maxlength="6" style="display:none" />
+    <button onclick="signinVerify()" id="verifyBtn" style="display:none">Verify</button>
+    <button onclick="signOut()" class="outline" id="signOutBtn" style="display:none">Sign out</button>
+    <div class="status" id="signinStatus">Not signed in.</div>
+  </div>
+
+  <div class="flows" id="flows"></div>
+
+</div>
+
+<div class="modal" id="modal">
+  <div class="modal-inner">
+    <div class="modal-head">
+      <h3 id="modalTitle">Flow output</h3>
+      <button class="modal-close" onclick="closeModal()">Close ✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<script>
+// ────────────────────────────────────────────────────────────
+//  API base URLs — defaults to localhost; override via ?api=...
+// ────────────────────────────────────────────────────────────
+const API = {
+  auth:         'http://127.0.0.1:8001',
+  user:         'http://127.0.0.1:8002',
+  billing:      'http://127.0.0.1:8012',
+  live:         'http://127.0.0.1:8013',
+  social:       'http://127.0.0.1:8014',
+  notification: 'http://127.0.0.1:8015',
+  analytics:    'http://127.0.0.1:8016',
+};
+
+let accessToken = sessionStorage.getItem('access_token') || null;
+
+// ────────────────────────────────────────────────────────────
+//  Generic fetch wrapper that records request/response
+//  for the modal output
+// ────────────────────────────────────────────────────────────
+async function callApi(method, url, body, withAuth = false) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (withAuth && accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+  const opts = { method, headers };
+  if (body) opts.body = JSON.stringify(body);
+  let resp, text, json = null;
+  try {
+    resp = await fetch(url, opts);
+    text = await resp.text();
+    try { json = JSON.parse(text); } catch (e) {}
+  } catch (e) {
+    return { ok: false, status: 0, error: e.message, requestBody: body };
+  }
+  return { ok: resp.ok, status: resp.status, body: json ?? text, requestBody: body };
+}
+
+// ────────────────────────────────────────────────────────────
+//  Health-check every API on load → light up pills
+// ────────────────────────────────────────────────────────────
+async function pingApis() {
+  for (const [name, base] of Object.entries(API)) {
+    const pill = document.querySelector(`.pill[data-api="${name}"]`);
+    try {
+      const r = await fetch(`${base}/healthz`, { method: 'GET' });
+      pill.classList.toggle('ok', r.ok);
+      pill.classList.toggle('fail', !r.ok);
+    } catch (e) {
+      pill.classList.add('fail');
+    }
+  }
+}
+pingApis();
+setInterval(pingApis, 15000);  // re-check every 15s
+
+// ────────────────────────────────────────────────────────────
+//  Sign-in flow
+// ────────────────────────────────────────────────────────────
+async function signinStart() {
+  const email = document.getElementById('email').value.trim();
+  if (!email) return alert('email required');
+  const r = await callApi('POST', `${API.auth}/auth/email/start`, { email });
+  if (!r.ok) return setStatus(`✗ ${r.body.detail || r.error}`, 'fail');
+  if (r.body._devCode) {
+    document.getElementById('otp').value = r.body._devCode;
+    setStatus(`✓ code sent (dev mode showed it: ${r.body._devCode})`, 'ok');
+  } else {
+    setStatus(`✓ code sent to ${email}`, 'ok');
+  }
+  document.getElementById('otp').style.display = '';
+  document.getElementById('verifyBtn').style.display = '';
+}
+
+async function signinVerify() {
+  const email = document.getElementById('email').value.trim();
+  const code = document.getElementById('otp').value.trim();
+  const r = await callApi('POST', `${API.auth}/auth/email/verify`, { email, code });
+  if (!r.ok) return setStatus(`✗ ${r.body.detail}`, 'fail');
+  accessToken = r.body.accessToken;
+  sessionStorage.setItem('access_token', accessToken);
+  setStatus(`✓ signed in (JWT length ${accessToken.length})`, 'ok');
+  document.getElementById('signOutBtn').style.display = '';
+  document.getElementById('otp').style.display = 'none';
+  document.getElementById('verifyBtn').style.display = 'none';
+}
+
+function signOut() {
+  accessToken = null;
+  sessionStorage.removeItem('access_token');
+  setStatus('Not signed in.', '');
+  document.getElementById('signOutBtn').style.display = 'none';
+}
+
+function setStatus(msg, cls) {
+  const el = document.getElementById('signinStatus');
+  el.textContent = msg;
+  el.className = `status ${cls}`;
+}
+
+if (accessToken) {
+  setStatus('✓ signed in (from previous session)', 'ok');
+  document.getElementById('signOutBtn').style.display = '';
+}
+
+// ────────────────────────────────────────────────────────────
+//  Modal output
+// ────────────────────────────────────────────────────────────
+function openModal(title) {
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalBody').innerHTML = '';
+  document.getElementById('modal').classList.add('show');
+}
+function closeModal() { document.getElementById('modal').classList.remove('show'); }
+function appendStep(method, path, result) {
+  const html = `
+    <div class="step">
+      <div class="step-head">
+        <span class="step-method ${method}">${method}</span>
+        <span class="step-path">${path}</span>
+        <span class="step-status ${result.ok ? 'ok' : 'err'}">${result.status || 'ERROR'}</span>
+      </div>
+      ${result.requestBody ? `<pre>${escape(JSON.stringify(result.requestBody, null, 2))}</pre>` : ''}
+      <pre>${escape(typeof result.body === 'string' ? result.body : JSON.stringify(result.body, null, 2))}</pre>
+    </div>`;
+  document.getElementById('modalBody').insertAdjacentHTML('beforeend', html);
+}
+function escape(s) {
+  return (s || '').toString().replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'})[c]);
+}
+
+// ────────────────────────────────────────────────────────────
+//  Flow definitions — each flow runs a sequence of API calls
+//  that exercises one UI template's backend
+// ────────────────────────────────────────────────────────────
+const FLOWS = [
+  { n: '18', title: 'Auth — security health + events', auth: true, apis: ['auth'],
+    desc: 'Fetches the per-user security score (passkey/2FA/recovery) + recent sign-in events.',
+    run: async () => {
+      openModal('UI template 18 — Auth security health');
+      const h = await callApi('GET', `${API.auth}/auth/security/health`, null, true);
+      appendStep('GET', '/auth/security/health', h);
+      const e = await callApi('GET', `${API.auth}/auth/events?limit=5`, null, true);
+      appendStep('GET', '/auth/events?limit=5', e);
+    }},
+  { n: '19', title: 'Privacy — toggle data controls', auth: true, apis: ['user'],
+    desc: 'Reads, toggles, and writes back the 6 privacy flags (watch history, personalization, etc.).',
+    run: async () => {
+      openModal('UI template 19 — Privacy controls');
+      const r1 = await callApi('GET', `${API.user}/users/me/privacy`, null, true);
+      appendStep('GET', '/users/me/privacy', r1);
+      if (r1.ok) {
+        const flipped = { ...r1.body, watchHistory: !r1.body.watchHistory };
+        const r2 = await callApi('PUT', `${API.user}/users/me/privacy`, flipped, true);
+        appendStep('PUT', '/users/me/privacy', r2);
+      }
+    }},
+  { n: '20', title: 'Devices — list + sign-out-all', auth: true, apis: ['user'],
+    desc: 'Lists active devices, hits the dangerous /devices/all endpoint, re-lists to confirm.',
+    run: async () => {
+      openModal('UI template 20 — Device management');
+      const r1 = await callApi('GET', `${API.user}/users/me/devices`, null, true);
+      appendStep('GET', '/users/me/devices', r1);
+      const r2 = await callApi('DELETE', `${API.user}/users/me/devices/all`, null, true);
+      appendStep('DELETE', '/users/me/devices/all', r2);
+      const r3 = await callApi('GET', `${API.user}/users/me/devices`, null, true);
+      appendStep('GET', '/users/me/devices', r3);
+    }},
+  { n: '21', title: 'Parental — set PIN + verify', auth: true, apis: ['user'],
+    desc: 'Sets a scrypt-hashed PIN, then verifies (correct + wrong).',
+    run: async () => {
+      openModal('UI template 21 — Parental PIN');
+      const set = await callApi('POST', `${API.user}/users/me/pin`, { pin: '4297' }, true);
+      appendStep('POST', '/users/me/pin', set);
+      const ok = await callApi('POST', `${API.user}/users/me/pin/verify`, { pin: '4297' }, true);
+      appendStep('POST', '/users/me/pin/verify (correct)', ok);
+      const bad = await callApi('POST', `${API.user}/users/me/pin/verify`, { pin: '9999' }, true);
+      appendStep('POST', '/users/me/pin/verify (wrong)', bad);
+    }},
+  { n: '13', title: '2FA — generate QR + verify TOTP', auth: true, apis: ['auth'],
+    desc: 'Returns a QR code (base64 PNG) you can scan with Google Authenticator.',
+    run: async () => {
+      openModal('UI template 13 — Set up 2FA');
+      const r = await callApi('POST', `${API.auth}/auth/2fa/setup`, null, true);
+      appendStep('POST', '/auth/2fa/setup', { ...r, body: { ...r.body, qrPngBase64: r.body?.qrPngBase64?.slice(0, 80) + '...(truncated)' }});
+      if (r.body?.qrPngBase64) {
+        const img = `<img src="data:image/png;base64,${r.body.qrPngBase64}" style="background:#fff;padding:8px;border-radius:8px;margin-top:8px;max-width:200px"/>`;
+        document.getElementById('modalBody').insertAdjacentHTML('beforeend', img);
+      }
+    }},
+  { n: '09', title: 'Wallet — creator earnings', auth: true, apis: ['billing'],
+    desc: 'Returns 12-month earnings trend + top videos by revenue (ads/tips/members/merch).',
+    run: async () => {
+      openModal('UI template 09 — Creator earnings');
+      const r = await callApi('GET', `${API.billing}/billing/creator/earnings?range=30d`, null, true);
+      appendStep('GET', '/billing/creator/earnings', r);
+    }},
+  { n: '10', title: 'Memberships — list tiers + subscribe', auth: true, apis: ['billing'],
+    desc: '4 tier types (Free/Supporter/Insider/Producer); then subscribes to Supporter.',
+    run: async () => {
+      openModal('UI template 10 — Memberships');
+      const r1 = await callApi('GET', `${API.billing}/billing/memberships/tiers/ch_mira`);
+      appendStep('GET', '/billing/memberships/tiers/ch_mira', r1);
+      const r2 = await callApi('POST', `${API.billing}/billing/memberships/subscribe`,
+        { tierId: 'tier_supporter', paymentMethodId: 'pm_test_card' }, true);
+      appendStep('POST', '/billing/memberships/subscribe', r2);
+    }},
+  { n: '11', title: 'Super chat — $5, $25, $100 (colors)', auth: true, apis: ['billing'],
+    desc: 'Verifies the blue/pink/gold color logic in production.',
+    run: async () => {
+      openModal('UI template 11 — Super chat');
+      for (const amount of [5, 25, 100]) {
+        const r = await callApi('POST', `${API.billing}/billing/super-chat`,
+          { streamId: 'stream_demo', amount, currency: 'USD', message: `Tip ${amount}` }, true);
+        appendStep('POST', `/billing/super-chat (amount=${amount})`, r);
+      }
+    }},
+  { n: '14', title: 'Live polls — create + vote', auth: true, apis: ['live'],
+    desc: 'Creates a 3-option poll, votes for option 0, verifies the percent updates.',
+    run: async () => {
+      openModal('UI template 14 — Live polls');
+      const c = await callApi('POST', `${API.live}/live/streams/stream_demo/poll`,
+        { question: 'Which feature next?', options: ['Postgres', 'Redis', 'OpenTelemetry'], durationSec: 60 }, true);
+      appendStep('POST', '/live/streams/stream_demo/poll', c);
+      if (c.body?.id) {
+        const v = await callApi('POST', `${API.live}/live/streams/stream_demo/poll/${c.body.id}/vote`,
+          { optionIndex: 0 }, true);
+        appendStep('POST', `/live/streams/.../poll/${c.body.id}/vote`, v);
+      }
+    }},
+  { n: '12', title: 'Watch party — create room', auth: true, apis: ['social'],
+    desc: 'Creates a synced-playback room; returns an invite URL.',
+    run: async () => {
+      openModal('UI template 12 — Watch party');
+      const r = await callApi('POST', `${API.social}/social/watch-party`,
+        { videoId: 'vid_001', inviteOnly: false }, true);
+      appendStep('POST', '/social/watch-party', r);
+    }},
+  { n: '04', title: 'Creator — follow + comments', auth: true, apis: ['social'],
+    desc: 'Follows a channel, reads existing comments, posts a new one.',
+    run: async () => {
+      openModal('UI template 04 — Creator profile');
+      const f = await callApi('POST', `${API.social}/social/follow/ch_mira`, null, true);
+      appendStep('POST', '/social/follow/ch_mira', f);
+      const r = await callApi('GET', `${API.social}/social/comments/vid_001`);
+      appendStep('GET', '/social/comments/vid_001', r);
+      const p = await callApi('POST', `${API.social}/social/comments/vid_001`,
+        { body: 'Live from the demo cockpit!' }, true);
+      appendStep('POST', '/social/comments/vid_001', p);
+    }},
+  { n: '08', title: 'Inbox — notifications', auth: true, apis: ['notification'],
+    desc: 'Reads the in-app inbox (security alerts, payouts, episode drops).',
+    run: async () => {
+      openModal('UI template 08 — Inbox');
+      const r = await callApi('GET', `${API.notification}/notifications/inbox`, null, true);
+      appendStep('GET', '/notifications/inbox', r);
+    }},
+  { n: '15', title: 'Analytics — emit event + dashboard', auth: true, apis: ['analytics'],
+    desc: 'Sends a video_started event, then reads recent events + watch-time aggregate.',
+    run: async () => {
+      openModal('UI template 15 — Analytics');
+      const e = await callApi('POST', `${API.analytics}/analytics/events`,
+        { name: 'video_started', properties: { videoId: 'vid_001', durationSec: 0 } }, true);
+      appendStep('POST', '/analytics/events', e);
+      const recent = await callApi('GET', `${API.analytics}/analytics/events/recent?limit=5`);
+      appendStep('GET', '/analytics/events/recent?limit=5', recent);
+      const wt = await callApi('GET', `${API.analytics}/analytics/watch-time/today`);
+      appendStep('GET', '/analytics/watch-time/today', wt);
+    }},
+  { n: '06', title: 'Live stream — get metadata + chat ticket', auth: false, apis: ['live'],
+    desc: 'Reads public stream info + a one-time signed ticket for the chat WebSocket.',
+    run: async () => {
+      openModal('UI template 06 — Live stream');
+      const s = await callApi('GET', `${API.live}/live/streams/stream_demo`);
+      appendStep('GET', '/live/streams/stream_demo', s);
+      const t = await callApi('GET', `${API.live}/live/streams/stream_demo/chat`);
+      appendStep('GET', '/live/streams/stream_demo/chat', t);
+    }},
+  { n: '16', title: 'Global — regional pricing (IN/US/EU/JP)', auth: false, apis: ['billing'],
+    desc: 'PPP-adjusted prices: INR, USD, EUR, JPY.',
+    run: async () => {
+      openModal('UI template 16 — Regional pricing');
+      for (const region of ['IN', 'US', 'EU', 'JP', 'BR']) {
+        const r = await callApi('GET', `${API.billing}/billing/pricing/regional?region=${region}`);
+        appendStep('GET', `/billing/pricing/regional?region=${region}`, r);
+      }
+    }},
+];
+
+// Render flows
+const grid = document.getElementById('flows');
+for (const f of FLOWS) {
+  const apiTags = f.apis.map(a => `<span class="tag">${a}-api</span>`).join('');
+  const authTag = f.auth ? `<span class="tag auth">JWT required</span>` : `<span class="tag">public</span>`;
+  grid.insertAdjacentHTML('beforeend', `
+    <div class="card">
+      <div class="card-head">
+        <span class="card-num">#${f.n}</span>
+        <div class="card-title">${f.title}</div>
+      </div>
+      <div class="card-desc">${f.desc}</div>
+      <div class="card-meta">${apiTags} ${authTag}</div>
+      <div class="card-actions">
+        <button class="primary" onclick="runFlow(${FLOWS.indexOf(f)})">▶ Run flow</button>
+      </div>
+    </div>`);
+}
+window.runFlow = async (idx) => {
+  const flow = FLOWS[idx];
+  if (flow.auth && !accessToken) {
+    alert('Sign in first (the panel at the top).');
+    return;
+  }
+  try {
+    await flow.run();
+  } catch (e) {
+    alert('Flow crashed: ' + e.message);
+  }
+};
+</script>
+</body>
+</html>

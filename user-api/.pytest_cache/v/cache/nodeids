@@ -1,0 +1,14 @@
+[
+  "tests/test_security.py::test_security_headers_present",
+  "tests/test_user.py::test_devices_list_and_signout_all",
+  "tests/test_user.py::test_healthz",
+  "tests/test_user.py::test_metrics",
+  "tests/test_user.py::test_pin_lifecycle_scrypt_hashed",
+  "tests/test_user.py::test_pin_rejects_all_same",
+  "tests/test_user.py::test_pin_rejects_non_numeric",
+  "tests/test_user.py::test_privacy_six_flags",
+  "tests/test_user.py::test_profile_cap_5",
+  "tests/test_user.py::test_profile_invalid_age",
+  "tests/test_user.py::test_users_me",
+  "tests/test_user.py::test_users_me_bogus_token"
+]

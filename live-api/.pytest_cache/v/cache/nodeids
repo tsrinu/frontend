@@ -1,0 +1,14 @@
+[
+  "tests/test_auth_required.py::test_create_poll_requires_auth",
+  "tests/test_auth_required.py::test_create_prediction_requires_auth",
+  "tests/test_auth_required.py::test_stream_read_remains_public",
+  "tests/test_auth_required.py::test_vote_poll_requires_auth",
+  "tests/test_live.py::test_get_stream",
+  "tests/test_live.py::test_healthz",
+  "tests/test_live.py::test_metrics",
+  "tests/test_live.py::test_poll_create_vote_bounds",
+  "tests/test_live.py::test_poll_rejects_single_option",
+  "tests/test_security.py::test_oversize_body_rejected",
+  "tests/test_security.py::test_request_id_propagates_when_provided",
+  "tests/test_security.py::test_security_headers_present"
+]

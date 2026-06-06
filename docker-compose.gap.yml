@@ -1,0 +1,50 @@
+# =============================================================================
+#  Override file — build the 7 gap services locally instead of pulling top1p/*
+#
+#  Run with both files:
+#    docker compose -f docker-compose.yml -f docker-compose.gap.yml up -d
+#
+#  Anything in `build:` here is rebuilt locally; the `image:` field becomes
+#  the tag applied to the local build so the rest of compose keeps working.
+# =============================================================================
+
+services:
+  auth-service:
+    build:
+      context: ./gap-services/auth-service
+    image: top1p/distrebute-auth-service:latest
+    volumes:
+      - jwt_keys:/app/keys
+
+  user-service:
+    build:
+      context: ./gap-services/user-service
+    image: top1p/distrebute-user-service:latest
+
+  billing-service:
+    build:
+      context: ./gap-services/billing-service
+    image: top1p/distrebute-billing-service:latest
+
+  live-service:
+    build:
+      context: ./gap-services/live-service
+    image: top1p/distrebute-live-service:latest
+
+  social-service:
+    build:
+      context: ./gap-services/social-service
+    image: top1p/distrebute-social-service:latest
+
+  notification-service:
+    build:
+      context: ./gap-services/notification-service
+    image: top1p/distrebute-notification-service:latest
+
+  analytics-service:
+    build:
+      context: ./gap-services/analytics-service
+    image: top1p/distrebute-analytics-service:latest
+
+volumes:
+  jwt_keys:

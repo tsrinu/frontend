@@ -1,0 +1,495 @@
+# =============================================================================
+#  distrebute.com — local development stack
+# =============================================================================
+#  Wires every top1p/* image discovered on Docker Hub + the infrastructure
+#  services they need (postgres, redis, kafka, minio, opensearch, nginx)
+#  + proposed gap services (auth, billing, live, etc.) marked TODO.
+#
+#  Start:   docker compose up -d
+#  Stop:    docker compose down
+#  Logs:    docker compose logs -f <service>
+#  Gateway: http://localhost:8080
+#
+#  Replace placeholder `distrebute/<name>:latest` images for the seven gap
+#  services with your own builds when they exist. Until then those containers
+#  will fail to start — every other service runs.
+# =============================================================================
+
+x-common-env: &common-env
+  ENV: development
+  LOG_LEVEL: info
+  REDIS_URL: redis://redis:6379
+  KAFKA_BROKERS: kafka:9092
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: 5432
+  POSTGRES_USER: distrebute
+  POSTGRES_PASSWORD: changeme_dev_only
+  S3_ENDPOINT: http://minio:9000
+  S3_ACCESS_KEY: minioadmin
+  S3_SECRET_KEY: minioadmin
+  OPENSEARCH_URL: http://opensearch:9200
+  JWT_PUBLIC_KEY_URL: http://auth-service:8001/.well-known/jwks.json
+
+x-restart: &restart
+  restart: unless-stopped
+
+networks:
+  distrebute:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  opensearch_data:
+  kafka_data:
+
+services:
+
+  # ---------------------------------------------------------------------------
+  #  INFRASTRUCTURE
+  # ---------------------------------------------------------------------------
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: distrebute-postgres
+    <<: *restart
+    environment:
+      POSTGRES_USER: distrebute
+      POSTGRES_PASSWORD: changeme_dev_only
+      POSTGRES_MULTIPLE_DATABASES: auth,users,metadata,billing,gamification,social,analytics
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init-multi-db.sh:/docker-entrypoint-initdb.d/init-multi-db.sh:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U distrebute"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - distrebute
+
+  redis:
+    image: redis:7-alpine
+    container_name: distrebute-redis
+    <<: *restart
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+    networks:
+      - distrebute
+
+  kafka:
+    image: apache/kafka:latest
+    container_name: distrebute-kafka
+    hostname: kafka
+    <<: *restart
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    ports:
+      - "9092:9092"
+    networks:
+      - distrebute
+
+  minio:
+    image: minio/minio:latest
+    container_name: distrebute-minio
+    <<: *restart
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      retries: 5
+    networks:
+      - distrebute
+
+  opensearch:
+    image: opensearchproject/opensearch:2.13.0
+    container_name: distrebute-opensearch
+    <<: *restart
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: ChangeMe_Dev_Only_2026!
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - distrebute
+
+  nginx-gateway:
+    image: nginx:1.27-alpine
+    container_name: distrebute-gateway
+    <<: *restart
+    volumes:
+      - ./infra/nginx/gateway.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8080:80"
+    depends_on:
+      - frontend
+      - metadata-service
+      - video-service
+      - recommendation-service
+    networks:
+      - distrebute
+
+  # ---------------------------------------------------------------------------
+  #  FRONTEND (top1p image)
+  # ---------------------------------------------------------------------------
+
+  frontend:
+    image: top1p/distrebute-frontend:latest
+    container_name: distrebute-frontend
+    <<: *restart
+    environment:
+      <<: *common-env
+      API_GATEWAY_URL: http://nginx-gateway
+      PUBLIC_URL: http://localhost:8080
+    ports:
+      - "3000:3000"
+    networks:
+      - distrebute
+
+  # ---------------------------------------------------------------------------
+  #  CORE CONTENT SERVICES (top1p images)
+  # ---------------------------------------------------------------------------
+
+  metadata-service:
+    image: top1p/distrebute-metadata-service:latest
+    container_name: distrebute-metadata
+    <<: *restart
+    environment:
+      <<: *common-env
+      POSTGRES_DB: metadata
+      SERVICE_PORT: 8003
+    ports:
+      - "8003:8003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - distrebute
+
+  video-service:
+    image: top1p/distrebute-video-service:latest
+    container_name: distrebute-video
+    <<: *restart
+    environment:
+      <<: *common-env
+      SERVICE_PORT: 8004
+      HLS_OUTPUT_BUCKET: hls-streams
+      DRM_PROVIDER: widevine
+      DRM_KEY_SERVER_URL: http://drm-mock:9090
+    ports:
+      - "8004:8004"
+    depends_on:
+      - minio
+      - kafka
+    networks:
+      - distrebute
+
+  recommendation-service:
+    image: top1p/distrebute-recommendation-service:latest
+    container_name: distrebute-recs
+    <<: *restart
+    environment:
+      <<: *common-env
+      SERVICE_PORT: 8005
+      VJEPA_URL: http://vjepa-service:8008
+      NLP_URL: http://nlp-service:8007
+      USER_SERVICE_URL: http://user-service:8002
+    ports:
+      - "8005:8005"
+    depends_on:
+      - redis
+      - kafka
+    networks:
+      - distrebute
+
+  translation-service:
+    image: top1p/distrebute-translation-service:latest
+    container_name: distrebute-translation
+    <<: *restart
+    environment:
+      <<: *common-env
+      SERVICE_PORT: 8006
+      SUPPORTED_LANGUAGES: en,hi,te,ta,es,ja,zh,pt,ar,fr,de,ko
+      DUB_QUEUE_TOPIC: dub.requests
+    ports:
+      - "8006:8006"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    depends_on:
+      - kafka
+      - minio
+    networks:
+      - distrebute
+
+  nlp-service:
+    image: top1p/distrebute-nlp-service:latest
+    container_name: distrebute-nlp
+    <<: *restart
+    environment:
+      <<: *common-env
+      SERVICE_PORT: 8007
+      MODELS: search,toxicity,summarization,intent
+    ports:
+      - "8007:8007"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    depends_on:
+      - opensearch
+    networks:
+      - distrebute
+
+  vjepa-service:
+    image: top1p/distrebute-vjepa-service:latest
+    container_name: distrebute-vjepa
+    <<: *restart
+    environment:
+      <<: *common-env
+      SERVICE_PORT: 8008
+      EMBEDDING_DIM: 1024
+      VECTOR_INDEX: video_embeddings
+    ports:
+      - "8008:8008"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    depends_on:
+      - opensearch
+      - kafka
+    networks:
+      - distrebute
+
+  ai-service:
+    image: top1p/distrebute-ai-service:latest
+    container_name: distrebute-ai
+    <<: *restart
+    environment:
+      <<: *common-env
+      SERVICE_PORT: 8009
+      MODELS: voice_nav,smart_digest,chapter_extraction,summarize
+    ports:
+      - "8009:8009"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - distrebute
+
+  gamification-service:
+    image: top1p/distrebute-gamification-service:latest
+    container_name: distrebute-gamification
+    <<: *restart
+    environment:
+      <<: *common-env
+      POSTGRES_DB: gamification
+      SERVICE_PORT: 8010
+    ports:
+      - "8010:8010"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - distrebute
+
+  spam-service:
+    image: top1p/distrebute-spam-service:latest
+    container_name: distrebute-spam
+    <<: *restart
+    environment:
+      <<: *common-env
+      SERVICE_PORT: 8011
+      INFERENCE_TOPIC: moderation.flags
+    ports:
+      - "8011:8011"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    depends_on:
+      - kafka
+    networks:
+      - distrebute
+
+  # ---------------------------------------------------------------------------
+  #  GAP SERVICES (TODO — build & push to top1p before this works)
+  # ---------------------------------------------------------------------------
+
+  auth-service:
+    image: top1p/distrebute-auth-service:latest
+    container_name: distrebute-auth
+    <<: *restart
+    environment:
+      <<: *common-env
+      POSTGRES_DB: auth
+      SERVICE_PORT: 8001
+      JWT_PRIVATE_KEY_PATH: /run/secrets/jwt_private
+      WEBAUTHN_RP_ID: localhost
+      WEBAUTHN_RP_ORIGIN: http://localhost:8080
+      OAUTH_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      OAUTH_APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - distrebute
+
+  user-service:
+    image: top1p/distrebute-user-service:latest
+    container_name: distrebute-user
+    <<: *restart
+    environment:
+      <<: *common-env
+      POSTGRES_DB: users
+      SERVICE_PORT: 8002
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - distrebute
+
+  billing-service:
+    image: top1p/distrebute-billing-service:latest
+    container_name: distrebute-billing
+    <<: *restart
+    environment:
+      <<: *common-env
+      POSTGRES_DB: billing
+      SERVICE_PORT: 8012
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-sk_test_placeholder}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      PCI_VAULT_URL: http://pci-vault-mock:9091
+    ports:
+      - "8012:8012"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - distrebute
+
+  live-service:
+    image: top1p/distrebute-live-service:latest
+    container_name: distrebute-live
+    <<: *restart
+    environment:
+      <<: *common-env
+      SERVICE_PORT: 8013
+      RTMP_INGEST_PORT: 1935
+      WEBSOCKET_PORT: 8113
+    ports:
+      - "8013:8013"
+      - "1935:1935"
+      - "8113:8113"
+    depends_on:
+      - redis
+      - kafka
+    networks:
+      - distrebute
+
+  social-service:
+    image: top1p/distrebute-social-service:latest
+    container_name: distrebute-social
+    <<: *restart
+    environment:
+      <<: *common-env
+      POSTGRES_DB: social
+      SERVICE_PORT: 8014
+      WATCH_PARTY_WS_PORT: 8114
+    ports:
+      - "8014:8014"
+      - "8114:8114"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - distrebute
+
+  notification-service:
+    image: top1p/distrebute-notification-service:latest
+    container_name: distrebute-notification
+    <<: *restart
+    environment:
+      <<: *common-env
+      SERVICE_PORT: 8015
+      APNS_KEY_ID: ${APNS_KEY_ID:-}
+      FCM_SERVER_KEY: ${FCM_SERVER_KEY:-}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+    ports:
+      - "8015:8015"
+    depends_on:
+      - kafka
+      - redis
+    networks:
+      - distrebute
+
+  analytics-service:
+    image: top1p/distrebute-analytics-service:latest
+    container_name: distrebute-analytics
+    <<: *restart
+    environment:
+      <<: *common-env
+      POSTGRES_DB: analytics
+      SERVICE_PORT: 8016
+      CLICKHOUSE_URL: http://clickhouse:8123
+    ports:
+      - "8016:8016"
+    depends_on:
+      - kafka
+    networks:
+      - distrebute
